@@ -3,10 +3,11 @@ html, body {
   padding: 0;
   height: 100%;
   overflow: hidden;
+  
 }
 
 body {
-  background: #aeefff;
+  background: #1c91d2;
   margin: 0;
   padding: 0;
   font-family: 'Baloo 2', Arial, sans-serif;

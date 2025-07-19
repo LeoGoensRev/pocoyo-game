@@ -1,15 +1,15 @@
-// Optionally, preload intro asset if different from bg
-
 // Pocoyo Flying Game – Phaser 3
-// main.js
+// main.js (Refactored with improvements and responsive fixes)
 
 // --- CONSTANTS & CONFIG ---
-let GAME_WIDTH = window.innerWidth;
-let GAME_HEIGHT = window.innerHeight;
-const GRAVITY = 900;
-const FLY_VELOCITY = -350;
-let STAR_SPEED = 200;
-const STAR_SPEED_INCREMENT = 10; // Increase per star
+const GRAVITY = 400;
+const FLY_VELOCITY = -400;
+let STAR_SPEED = 150;
+const STAR_SPEED_INCREMENT = 10;
+const MAX_LIVES = 3;
+const UI_MARGIN_RATIO = 0.04;
+const MIN_MARGIN = 32;
+const FONT_RATIO = 25;
 
 // --- GAME STATE ---
 let score = 0;
@@ -18,11 +18,318 @@ let bgMusic;
 let gameOver = false;
 let missedStars = 0;
 
-// --- PHASER CONFIGURATION ---
+class MainScene extends Phaser.Scene {
+  constructor() {
+    super({ key: 'MainScene' });
+  }
+
+  getCharacterScale() {
+    const sw = this.scale.width;
+    if (sw < 600) return 0.18; // xs
+    if (sw < 900) return 0.25; // sm
+    if (sw < 1200) return 0.30; // md
+    if (sw < 1536) return 0.40; // lg
+    return 1.55; // xl
+  }
+
+  preload() {
+    this.load.image('bg', 'assets/bg.png');
+    this.load.image('intro', 'assets/Intro.png');
+    this.load.image('pocoyo', 'assets/pocoyo.png');
+    this.load.image('star', 'assets/star.png');
+    this.load.image('propeller', 'assets/propeller.png');
+    this.load.audio('jump', 'assets/jump.mp3');
+    this.load.audio('bgmusic', 'assets/bg-music.mp3');
+    this.load.audio('catch', 'assets/catch.mp3');
+    this.load.video('bgvideo', 'assets/background.mp4', 'loadeddata', false, true);
+  }
+
+  create() {
+    this.bgVideo = this.add.video(this.scale.width / 2, this.scale.height / 2, 'bgvideo');
+    this.bgVideo.setDisplaySize(this.scale.width, this.scale.height);
+    this.bgVideo.play(true);
+    this.scale.on('resize', (gameSize) => {
+      this.bgVideo.setDisplaySize(gameSize.width, gameSize.height);
+      this.bgVideo.setPosition(gameSize.width / 2, gameSize.height / 2);
+    });
+
+    this.topMargin = Math.max(MIN_MARGIN, this.scale.height * UI_MARGIN_RATIO);
+    this.bottomMargin = Math.max(MIN_MARGIN, this.scale.height * UI_MARGIN_RATIO);
+
+    this.introBg = this.add.rectangle(
+      this.scale.width / 2,
+      this.scale.height / 2,
+      this.scale.width,
+      this.scale.height,
+      0x1c91d2
+    ).setOrigin(0.5);
+
+    this.introImg = this.add.image(this.scale.width / 2, this.scale.height / 2, 'intro');
+    this.setIntroImgSize();
+
+    this.introBtn = this.add.text(this.scale.width / 2, this.scale.height * 0.75, '', {
+      fontFamily: 'POCOYO TV, Arial, sans-serif',
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+
+    this.input.once('pointerdown', () => {
+      this.introBg.destroy();
+      this.introImg.destroy();
+      this.introBtn.destroy();
+      this.startGame();
+    });
+
+    this.scale.on('resize', function(gameSize) {
+      this.topMargin = Math.max(MIN_MARGIN, gameSize.height * UI_MARGIN_RATIO);
+      this.bottomMargin = Math.max(MIN_MARGIN, gameSize.height * UI_MARGIN_RATIO);
+      if (this.introBg) {
+        this.introBg.setSize(gameSize.width, gameSize.height);
+        this.introBg.setPosition(gameSize.width / 2, gameSize.height / 2);
+      }
+      this.setIntroImgSize();
+      this.introBtn.setPosition(gameSize.width / 2, gameSize.height * 0.75);
+      this.introBtn.setFontSize(Math.max(32, Math.floor(gameSize.width / 18)));
+    }, this);
+  }
+
+  setIntroImgSize() {
+    if (!this.introImg) return;
+    const sw = this.scale.width;
+    const sh = this.scale.height;
+    const tex = this.textures.get('intro').getSourceImage();
+    if (!tex) return;
+    const iw = tex.width;
+    const ih = tex.height;
+    let scale = Math.min(sw * 0.9 / iw, sh * 0.9 / ih);
+    this.introImg.displayWidth = iw * scale;
+    this.introImg.displayHeight = ih * scale;
+    this.introImg.setPosition(sw / 2, sh / 2);
+  }
+
+  startGame() {
+    score = 0;
+    missedStars = 0;
+    STAR_SPEED = 200;
+
+    this.createPocoyoContainer();
+
+    this.input.keyboard.on('keydown-SPACE', this.fly, this);
+    this.input.on('pointerdown', this.fly, this);
+
+    this.stars = this.physics.add.group();
+    this.spawnStar();
+
+    this.createScoreAndLivesUI();
+
+    this.jumpSound = this.sound.add('jump');
+    this.catchSound = this.sound.add('catch');
+    bgMusic = this.sound.add('bgmusic', { loop: true, volume: 0.2 });
+    bgMusic.play();
+
+    this.physics.add.overlap(this.pocoyoContainer, this.stars, this.collectStar, null, this);
+
+    this.scale.on('resize', this.resizeGame, this);
+  }
+
+  createPocoyoContainer() {
+    const pocoyoScale = this.getCharacterScale();
+    this.pocoyoContainer = this.add.container(0, 0);
+    this.pocoyo = this.add.sprite(0, 0, 'pocoyo').setScale(pocoyoScale);
+    this.propeller = this.add.sprite(350 * pocoyoScale, 120 * pocoyoScale, 'propeller')
+      .setScale(pocoyoScale * 0.67)
+      .setOrigin(0.5);
+    this.pocoyoContainer.add([this.pocoyo, this.propeller]);
+    this.physics.world.enable(this.pocoyoContainer);
+    this.pocoyoContainer.body.setCollideWorldBounds(true);
+    this.pocoyoContainer.body.setSize(420 * pocoyoScale, 120 * pocoyoScale);
+    this.pocoyoContainer.body.setOffset(0, 25 * pocoyoScale / 0.3); // 0.3 is base scale reference
+
+    const rexAnchor = this.plugins.get('rexAnchor');
+    if (rexAnchor && typeof rexAnchor.add === 'function') {
+      rexAnchor.add(this.pocoyoContainer, {
+        left: '20%',
+        centerY: '50%'
+      });
+    } else {
+      const x = Math.max(this.scale.width * 0.15, 120);
+      const y = this.scale.height * 0.5;
+      this.pocoyoContainer.setPosition(x, y);
+      console.warn('rexAnchor plugin not found');
+    }
+  }
+
+  createScoreAndLivesUI() {
+    const yUI = this.topMargin;
+    const scoreFontSize = Math.max(16, Math.floor(this.scale.width / FONT_RATIO));
+    scoreText = this.add.text(32, yUI, 'STARS: 0', {
+      fontFamily: 'POCOYO TV, Arial, sans-serif',
+      fontSize: scoreFontSize + 'px',
+      color: '#709450',
+      align: 'left'
+    }).setOrigin(0, 0);
+
+    const livesBgWidth = Math.max(160, Math.floor(this.scale.width * 0.13));
+    const livesBgHeight = scoreFontSize + 24;
+    this.livesBg = this.add.graphics();
+    this.livesBg.fillStyle(0xffffff, 0.7);
+    this.livesBg.fillRoundedRect(this.scale.width - livesBgWidth, yUI, livesBgWidth, livesBgHeight, 10);
+
+    this.livesHearts = this.add.text(this.scale.width - 32, yUI + livesBgHeight / 2, this.makeHearts(MAX_LIVES), {
+      fontFamily: 'POCOYO TV, Arial, sans-serif',
+      fontSize: scoreFontSize + 10 + 'px',
+      color: '#e63946',
+      align: 'right'
+    }).setOrigin(1, 0.5);
+  }
+
+  makeHearts(lives) {
+    return '♥'.repeat(lives) + ''.repeat(MAX_LIVES - lives);
+  }
+
+  update() {
+    if (gameOver) return;
+    if (this.propeller) this.propeller.rotation += 0.10;
+
+    const t = this.time.now / 1000;
+    this.stars?.children?.iterate((star) => {
+      if (!star) return;
+      star.x -= STAR_SPEED * (1/60);
+      if (star.wavePhase !== undefined) {
+        star.y = star.baseY + Math.sin(t * star.waveSpeed + star.wavePhase) * star.waveAmplitude;
+      }
+      star.rotation += 0.008;
+      if (star.x < -32) {
+        star.destroy();
+        missedStars++;
+        this.livesHearts?.setText(this.makeHearts(Math.max(0, MAX_LIVES - missedStars)));
+        if (missedStars >= MAX_LIVES && !gameOver) return this.endGame();
+        this.spawnStar();
+      }
+    });
+    if (this.pocoyoContainer?.body && this.pocoyo) {
+      //const pocoyoHeight = this.pocoyo.displayHeight;
+      //const minY = this.topMargin + pocoyoHeight / 2;
+      const pocoyoHeight = this.pocoyo.displayHeight;
+      const minY = this.topMargin + pocoyoHeight / 2;
+      const maxY = this.scale.height - this.bottomMargin - (pocoyoHeight / 2);
+      if (this.pocoyoContainer.y < minY) {
+        this.pocoyoContainer.y = minY;
+        this.pocoyoContainer.body.setVelocityY(0);
+      } else if (this.pocoyoContainer.y > maxY) {
+        this.pocoyoContainer.y = maxY - 1; // Nudge up slightly to allow smoother jump
+        this.pocoyoContainer.body.setVelocityY(-30); // Help Pocoyo lift off again
+      }
+      /*
+      if (this.pocoyoContainer.y < minY) {
+        this.pocoyoContainer.y = minY;
+        this.pocoyoContainer.body.setVelocityY(0);
+      }
+      //const maxY = this.scale.height - this.bottomMargin - (this.pocoyo.displayHeight / 2);
+      if (this.pocoyoContainer.y > maxY) {
+        this.pocoyoContainer.y = maxY;
+        this.pocoyoContainer.body.setVelocityY(0);
+      }*/
+    }
+  }
+
+  resizeGame(gameSize) {
+    const width = gameSize.width;
+    const height = gameSize.height;
+    this.topMargin = Math.max(MIN_MARGIN, height * UI_MARGIN_RATIO);
+    this.bottomMargin = Math.max(MIN_MARGIN, height * UI_MARGIN_RATIO);
+
+    this.bgVideo?.setDisplaySize(width, height).setPosition(width / 2, height / 2);
+
+    if (scoreText) {
+      const scoreFontSize = Math.max(16, Math.floor(width / FONT_RATIO));
+      const yUI = this.topMargin;
+      scoreText.setFontSize(scoreFontSize).setPosition(32, yUI);
+    }
+
+    if (this.livesHearts && this.livesBg) {
+      const scoreFontSize = Math.max(16, Math.floor(width / FONT_RATIO));
+      const yUI = this.topMargin;
+      const livesBgWidth = Math.max(160, Math.floor(width * 0.13));
+      const livesBgHeight = scoreFontSize + 24;
+      this.livesHearts.setFontSize(scoreFontSize + 10).setPosition(width - 32, yUI + livesBgHeight / 2);
+      this.livesBg.clear();
+      this.livesBg.fillStyle(0xffffff, 0.7);
+      this.livesBg.fillRoundedRect(width - livesBgWidth, yUI, livesBgWidth, livesBgHeight, 10);
+    }
+
+    const rexAnchor = this.plugins.get('rexAnchor');
+    if (!rexAnchor && this.pocoyoContainer) {
+      const x = Math.max(width * 0.15, 120);
+      const y = height * 0.5;
+      this.pocoyoContainer.setPosition(x, y);
+    }
+  }
+
+  fly() {
+    if (gameOver) return;
+    this.pocoyoContainer?.body?.setVelocityY(FLY_VELOCITY);
+    this.jumpSound.play();
+  }
+
+  spawnStar() {
+    const starScale = this.getCharacterScale();
+    const yFrac = Phaser.Math.FloatBetween(0.2, 0.8);
+    const y = this.scale.height * yFrac;
+    const star = this.stars.create(this.scale.width + 32, y, 'star').setScale(starScale);
+    star.body.allowGravity = false;
+    star.wavePhase = Math.random() * Math.PI * 2;
+    star.waveSpeed = 0.8 + Math.random() * 0.5;
+    star.waveAmplitude = 36 + Math.random() * 24;
+    star.baseY = y;
+
+    const rexAnchor = this.plugins.get('rexAnchor');
+    if (rexAnchor && typeof rexAnchor.add === 'function') {
+      rexAnchor.add(star, {
+        right: '100%',
+        centerY: `${Math.round(yFrac * 100)}%`
+      });
+    }
+  }
+
+  collectStar(_, star) {
+    star.destroy();
+    score++;
+    this.updateScoreText();
+    this.catchSound.play();
+    STAR_SPEED += STAR_SPEED_INCREMENT;
+    this.spawnStar();
+  }
+
+  updateScoreText() {
+    scoreText.setText(`STARS: ${score}`);
+  }
+
+  endGame() {
+    gameOver = true;
+    this.physics.pause();
+    bgMusic.stop();
+    const fontSize = Math.max(24, Math.floor(this.scale.width / 20)) + 'px';
+    this.add.text(this.scale.width / 2, this.scale.height / 2,
+      `GAME OVER\nYOU MISSED ${MAX_LIVES} STARS!\nCLICK OR TAP TO RESTART`, {
+        fontFamily: 'POCOYO TV, Arial, sans-serif',
+        fontSize,
+        color: '#fff',
+        stroke: '#000',
+        strokeThickness: 8,
+        align: 'center'
+      }).setOrigin(0.5);
+
+    this.input.once('pointerdown', () => {
+      gameOver = false;
+      missedStars = 0;
+      this.scene.restart();
+    });
+  }
+}
+
 const config = {
   type: Phaser.AUTO,
-  width: GAME_WIDTH,
-  height: GAME_HEIGHT,
+  width: window.innerWidth,
+  height: window.innerHeight,
   parent: 'game-container',
   physics: {
     default: 'arcade',
@@ -31,11 +338,7 @@ const config = {
       debug: false
     }
   },
-  scene: {
-    preload: preload,
-    create: create,
-    update: update
-  },
+  scene: MainScene,
   scale: {
     mode: Phaser.Scale.RESIZE,
     autoCenter: Phaser.Scale.CENTER_BOTH
@@ -43,318 +346,3 @@ const config = {
 };
 
 const game = new Phaser.Game(config);
-
-// --- STEP 3: PRELOAD ASSETS ---
-function preload() {
-  // Load all assets from local assets/ folder
-  this.load.image('bg', 'assets/bg.png'); // Background
-  this.load.image('intro', 'assets/Intro.png'); // Intro overlay image
-  this.load.image('pocoyo', 'assets/pocoyo.png'); // Main character
-  this.load.image('star', 'assets/star.png'); // Collectible
-  this.load.image('propeller', 'assets/propeller.png'); // Propeller for plane
-  this.load.audio('jump', 'assets/jump.mp3'); // Jump sound
-  this.load.audio('bgmusic', 'assets/bg-music.mp3'); // Background music
-  this.load.audio('catch', 'assets/catch.mp3'); // Catch sound for collecting a star
-  this.load.video('bgvideo', 'assets/background.mp4', 'loadeddata', false, true);
-
-}
-
-// --- STEP 4: CREATE GAME OBJECTS ---
-function create() {
-  this.bgVideo = this.add.video(this.scale.width / 2, this.scale.height / 2, 'bgvideo');
-  this.bgVideo.setDisplaySize(this.scale.width, this.scale.height);
-  this.bgVideo.play(true); // true = loop
-  // On resize, update video size/position
-  this.scale.on('resize', function(gameSize) {
-    this.bgVideo.setDisplaySize(gameSize.width, gameSize.height);
-    this.bgVideo.setPosition(gameSize.width / 2, gameSize.height / 2);
-  }, this);
-
-  // --- INTRO SCREEN ---
-  // (Removed static background image, only bgVideo is used)
-
-  // Show intro overlay using Intro.png
-  this.introImg = this.add.image(this.scale.width / 2, this.scale.height / 2, 'intro');
-  // Aspect-ratio-preserving scaling for intro image to cover the screen
-  const setIntroImgSize = () => {
-    if (!this.introImg) return;
-    const sw = this.scale.width;
-    const sh = this.scale.height;
-    const tex = this.textures.get('intro').getSourceImage();
-    if (!tex) return;
-    const iw = tex.width;
-    const ih = tex.height;
-    const screenRatio = sw / sh;
-    const imgRatio = iw / ih;
-    let dw, dh;
-    if (screenRatio > imgRatio) {
-      // Screen is wider than image: match width, scale height
-      dw = sw;
-      dh = sw / imgRatio;
-    } else {
-      // Screen is taller than image: match height, scale width
-      dh = sh;
-      dw = sh * imgRatio;
-    }
-    this.introImg.displayWidth = dw;
-    this.introImg.displayHeight = dh;
-    this.introImg.setPosition(sw / 2, sh / 2);
-    return { dw, dh };
-  };
-  const introImgDims = setIntroImgSize();
-  // Title and button on top of intro image
-  const introBtnY = this.scale.height / 2 + (introImgDims ? introImgDims.dh : this.scale.height) / 3;
-  this.introBtn = this.add.text(this.scale.width / 2, introBtnY, '', {
-    fontFamily: 'POCOYO TV, Arial, sans-serif',
-  }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-
-  // Start game on any tap/click
-  this.input.once('pointerdown', () => {
-    this.introImg.destroy();
-    this.introBtn.destroy();
-    startGame.call(this);
-  });
-
-  // Responsive resize for intro
-  this.scale.on('resize', function(gameSize) {
-    const width = gameSize.width;
-    const height = gameSize.height;
-    this.bgVideo.setDisplaySize(width, height);
-    this.bgVideo.setPosition(width / 2, height / 2);
-    if (this.introImg && this.introBtn) {
-      // Re-apply aspect-ratio-preserving scaling
-      const tex = this.textures.get('intro').getSourceImage();
-      if (tex) {
-        const iw = tex.width;
-        const ih = tex.height;
-        const screenRatio = width / height;
-        const imgRatio = iw / ih;
-        let dw, dh;
-        if (screenRatio > imgRatio) {
-          dw = width;
-          dh = width / imgRatio;
-        } else {
-          dh = height;
-          dw = height * imgRatio;
-        }
-        this.introImg.displayWidth = dw;
-        this.introImg.displayHeight = dh;
-        this.introImg.setPosition(width / 2, height / 2);
-        this.introBtn.setPosition(width / 2, height / 2 + dh / 4);
-        this.introBtn.setFontSize(Math.max(32, Math.floor(width / 18)));
-      }
-    }
-  }, this);
-}
-
-// --- START GAME LOGIC ---
-function startGame() {
-  // Use a container to group Pocoyo and propeller for perfect alignment
-  const pocoyoScale = 0.3;
-  // Offset Pocoyo left in the container so the propeller is at the nose and Pocoyo is visible
-  const pocoyoOffsetX = 0;
-  const pocoyoOffsetY = -63;
-  this.pocoyoContainer = this.add.container(160, this.scale.height / 2);
-  // Add colored background rectangle as first child
-  const bgWidth = 420 * pocoyoScale;
-  const bgHeight = 180 * pocoyoScale;
-  const bgColor = 0x000000; // black , change as desired
-  const bgAlpha = 0.5; // semi-transparent
-  const bgRect = this.add.graphics();
-  bgRect.fillStyle(bgColor, bgAlpha);
-  bgRect.fillRoundedRect(-40, -90, bgWidth, bgHeight, 32);
-  // Add all children to container (background first)
-  this.pocoyo = this.add.sprite(pocoyoOffsetX, pocoyoOffsetY, 'pocoyo').setScale(pocoyoScale);
-  const propellerOffsetX = 370 * pocoyoScale;
-  const propellerOffsetY = -25;
-  this.propeller = this.add.sprite(propellerOffsetX, propellerOffsetY, 'propeller').setScale(0.20);
-  this.propeller.setOrigin(0.5, 0.5);
-  this.pocoyoContainer.add([bgRect, this.pocoyo, this.propeller]);
-  // Enable physics on the container
-  this.physics.world.enable(this.pocoyoContainer);
-  this.pocoyoContainer.body.setCollideWorldBounds(true);
-  // Set body size to cover the whole plane (including propeller)
-  const bodyWidth = 420 * pocoyoScale; // match bgWidth
-  const bodyHeight = 120 * pocoyoScale; // slightly less than bgHeight for better fit
-  this.pocoyoContainer.body.setSize(bodyWidth, bodyHeight);
-  // Offset the body so it matches the plane's visual bounds
-  this.pocoyoContainer.body.setOffset(0, 25); // match bgRect x/y, but less y for better fit
-
-  // 3. Input: spacebar (desktop), or any tap/touch (mobile/tablet)
-  this.input.keyboard.on('keydown-SPACE', fly, this);
-  this.input.on('pointerdown', fly, this);
-  // 4. Stars group (collectibles)
-  this.stars = this.physics.add.group();
-  spawnStar.call(this);
-
-  // 5. Score text (left) and lives hearts (right)
-  score = 0;
-  let scoreFontSize = Math.max(10, Math.floor(this.scale.width / 25));
-  scoreText = this.add.text(32, 60, 'STARS: 0', {
-    fontFamily: 'POCOYO TV, Arial, sans-serif',
-    fontSize: scoreFontSize + 'px',
-    color: '#709450',
-    align: 'left'
-  }).setOrigin(0, 0.5);
-
-  // Add a semi-transparent rounded rectangle background for hearts
-  const livesBgWidth = 160;
-  const livesBgHeight = scoreFontSize + 24;
-  this.livesBg = this.add.graphics();
-  this.livesBg.fillStyle(0xffffff, 0.7);
-  this.livesBg.fillRoundedRect(this.scale.width - livesBgWidth, 60 - livesBgHeight/2, livesBgWidth, livesBgHeight, 10);
-
-  // Add ASCII hearts for lives
-  const makeHearts = (lives) => '♥'.repeat(lives) + ''.repeat(3 - lives);
-  this.livesHearts = this.add.text(this.scale.width - 32, 60, makeHearts(3), {
-    fontFamily: 'POCOYO TV, Arial, sans-serif',
-    fontSize: scoreFontSize + 10 + 'px',
-    color: '#e63946',
-    align: 'right'
-  }).setOrigin(1, 0.5);
-
-  // 6. Sounds
-  this.jumpSound = this.sound.add('jump');
-  this.catchSound = this.sound.add('catch');
-  bgMusic = this.sound.add('bgmusic', { loop: true, volume: 0.2 });
-  bgMusic.play();
-
-  // 7. Collisions: PocoyoContainer <-> Stars
-  this.physics.add.overlap(this.pocoyoContainer, this.stars, collectStar, null, this);
-
-  // --- Handle resizing ---
-  this.scale.on('resize', resizeGame, this);
-}
-
-function update() {
-  if (gameOver) return;
-  // Animate propeller if exists
-  if (this.propeller) {
-    this.propeller.rotation += 0.10; // spin speed
-  }
-
-  // 1. Scroll background for endless effect
-  // No background scrolling needed for a static, stretched background
-
-  // 2. Move stars left, respawn if off screen, rotate, and move up/down in a wavy pattern
-  if (this.stars && this.stars.children && typeof this.stars.children.iterate === 'function') {
-    const t = this.time.now / 1000; // seconds
-    this.stars.children.iterate(function(star) {
-      if (star) {
-        star.x -= STAR_SPEED * (1/60);
-        // Wavy up/down movement
-        if (star.wavePhase !== undefined) {
-          star.y = star.baseY + Math.sin(t * star.waveSpeed + star.wavePhase) * star.waveAmplitude;
-        }
-        star.rotation += 0.008; // Rotate star each frame (slower)
-        if (star.x < -32) {
-          star.destroy();
-          missedStars += 1;
-          if (this.livesHearts) {
-            const lives = Math.max(0, 3 - missedStars);
-            this.livesHearts.setText('♥'.repeat(lives) + ''.repeat(3 - lives));
-          }
-          if (missedStars >= 3 && !gameOver) {
-            endGame.call(this);
-            return;
-          }
-          spawnStar.call(this);
-        }
-      }
-    }, this);
-  }
-
-  // 3. Clamp at top, game over at bottom
-  if (this.pocoyoContainer && this.pocoyoContainer.body) {
-    if (this.pocoyoContainer.y < 0) {
-      this.pocoyoContainer.y = 0;
-      this.pocoyoContainer.body.setVelocityY(0);
-    }
-  }
-}
-
-function resizeGame(gameSize) {
-  const width = gameSize.width;
-  const height = gameSize.height;
-  // Resize video background to always cover the screen
-  if (this.bgVideo) {
-    this.bgVideo.setDisplaySize(width, height);
-    this.bgVideo.setPosition(width / 2, height / 2);
-  }
-  // Responsive font size and position for score and lives
-  if (scoreText) {
-    let scoreFontSize = Math.max(60, Math.floor(width / 8));
-    scoreText.setFontSize(scoreFontSize);
-    scoreText.setPosition(32, 60);
-  }
-  if (this.livesHearts && this.livesBg) {
-    let scoreFontSize = Math.max(60, Math.floor(width / 8));
-    this.livesHearts.setFontSize(scoreFontSize + 10);
-    this.livesHearts.setPosition(width - 32, 60);
-    // Redraw and reposition the background
-    const livesBgWidth = 120;
-    const livesBgHeight = scoreFontSize + 24;
-    this.livesBg.clear();
-    this.livesBg.fillStyle(0xffffff, 0.7);
-    this.livesBg.fillRoundedRect(width - 32 - livesBgWidth, 60 - livesBgHeight/2, livesBgWidth, livesBgHeight, 24);
-  }
-  // Responsive position and size for jump hint
-  if (this.jumpHint) {
-    this.jumpHint.setPosition(width / 2, height - 80);
-    let hintFontSize = Math.max(32, Math.floor(width / 18));
-    this.jumpHint.setFontSize(hintFontSize);
-  }
-}
-
-// --- STEP 5: FLY CONTROL ---
-function fly() {
-  if (gameOver) return;
-  if (this.pocoyoContainer && this.pocoyoContainer.body) {
-    this.pocoyoContainer.body.setVelocityY(FLY_VELOCITY);
-  }
-  this.jumpSound.play();
-}
-
-// --- STEP 6: SPAWN COLLECTIBLES ---
-function spawnStar() {
-  const y = Phaser.Math.Between(80, this.scale.height - 80);
-  const star = this.stars.create(this.scale.width + 32, y, 'star').setScale(0.3);
-  star.body.allowGravity = false;
-  // Give each star a random wave phase and amplitude for up/down movement
-  star.wavePhase = Math.random() * Math.PI * 2;
-  star.waveSpeed = 0.8 + Math.random() * 0.5; // radians per second, slow
-  star.waveAmplitude = 36 + Math.random() * 24; // pixels (more pronounced)
-  star.baseY = y;
-}
-
-// --- STEP 6: SCORING SYSTEM ---
-function collectStar(containerOrPocoyo, star) {
-  star.destroy();
-  score += 1;
-  scoreText.setText('STARS: ' + score);
-  this.catchSound.play(); // Play catch sound when collecting a star
-  // Increase star speed each time a star is collected
-  STAR_SPEED += STAR_SPEED_INCREMENT;
-  spawnStar.call(this);
-}
-
-// --- STEP 8: GAME OVER & RESTART ---
-function endGame() {
-  gameOver = true;
-  this.physics.pause();
-  bgMusic.stop();
-  const gameOverText = this.add.text(this.scale.width / 2, this.scale.height / 2, 'GAME OVER\nYOU MISSED 3 STARS!\nCLICK OR TAP TO RESTART', {
-    fontFamily: 'POCOYO TV, Arial, sans-serif',
-    fontSize: '48px',
-    color: '#fff',
-    stroke: '#000',
-    strokeThickness: 8,
-    align: 'center'
-  }).setOrigin(0.5);
-  // Block input until restart, then re-enable
-  this.input.once('pointerdown', () => {
-    gameOver = false;
-    missedStars = 0;
-    this.scene.restart();
-  });
-}

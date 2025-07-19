@@ -1,11 +1,11 @@
 {
   "name": "Pocoyo Flying Game",
-  "short_name": "PocoyoFly",
+  "short_name": "Pocoyo Flying",
   "start_url": ".",
   "display": "standalone",
   "background_color": "#87ceeb",
   "theme_color": "#87ceeb",
-  "description": "A fun Pocoyo flying game for kids!",
+  "description": "A fun Pocoyo flying game for my little one!",
   "icons": [
     {
       "src": "/favicon-96x96.png",
