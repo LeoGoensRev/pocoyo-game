@@ -51,6 +51,7 @@ function preload() {
   this.load.image('intro', 'assets/Intro.png'); // Intro overlay image
   this.load.image('pocoyo', 'assets/pocoyo.png'); // Main character
   this.load.image('star', 'assets/star.png'); // Collectible
+  this.load.image('propeller', 'assets/propeller.png'); // Propeller for plane
   this.load.audio('jump', 'assets/jump.mp3'); // Jump sound
   this.load.audio('bgmusic', 'assets/bg-music.mp3'); // Background music
   this.load.audio('catch', 'assets/catch.mp3'); // Catch sound for collecting a star
@@ -148,9 +149,21 @@ function create() {
 
 // --- START GAME LOGIC ---
 function startGame() {
-  // 2. Pocoyo sprite with physics
-  this.pocoyo = this.physics.add.sprite(100, this.scale.height / 2, 'pocoyo').setScale(0.3);
-  this.pocoyo.setCollideWorldBounds(true);
+  // Use a container to group Pocoyo and propeller for perfect alignment
+  const pocoyoScale = 0.3;
+  // Offset Pocoyo left in the container so the propeller is at the nose and Pocoyo is visible
+  const pocoyoOffsetX = 0;
+  const pocoyoOffsetY = -63; // positive moves Pocoyo down in the container
+  this.pocoyoContainer = this.add.container(160, this.scale.height / 2);
+  this.pocoyo = this.add.sprite(pocoyoOffsetX, pocoyoOffsetY, 'pocoyo').setScale(pocoyoScale);
+  const propellerOffsetX = 370 * pocoyoScale;
+  const propellerOffsetY = -25;
+  this.propeller = this.add.sprite(propellerOffsetX, propellerOffsetY, 'propeller').setScale(0.20);
+  this.propeller.setOrigin(0.5, 0.5);
+  this.pocoyoContainer.add([this.pocoyo, this.propeller]);
+  // Enable physics on the container
+  this.physics.world.enable(this.pocoyoContainer);
+  this.pocoyoContainer.body.setCollideWorldBounds(true);
 
   // 3. Input: spacebar (desktop), or any tap/touch (mobile/tablet)
   this.input.keyboard.on('keydown-SPACE', fly, this);
@@ -198,9 +211,12 @@ function startGame() {
   this.scale.on('resize', resizeGame, this);
 }
 
-// --- STEP 5: CONTROLS, GRAVITY, INFINITE BACKGROUND ---
 function update() {
   if (gameOver) return;
+  // Animate propeller if exists
+  if (this.propeller) {
+    this.propeller.rotation += 0.35; // spin speed
+  }
 
   // 1. Scroll background for endless effect
   // No background scrolling needed for a static, stretched background
@@ -234,13 +250,12 @@ function update() {
   }
 
   // 3. Game over if Pocoyo falls off screen (just reset position, not game over)
-  if (this.pocoyo && (this.pocoyo.y > this.scale.height || this.pocoyo.y < 0)) {
-    this.pocoyo.setPosition(100, this.scale.height / 2);
-    this.pocoyo.setVelocity(0, 0);
+  if (this.pocoyoContainer && (this.pocoyoContainer.y > this.scale.height || this.pocoyoContainer.y < 0)) {
+    this.pocoyoContainer.setPosition(100, this.scale.height / 2);
+    this.pocoyoContainer.body.setVelocity(0, 0);
   }
 }
 
-// --- Handle Phaser resize event ---
 function resizeGame(gameSize) {
   const width = gameSize.width;
   const height = gameSize.height;
@@ -277,7 +292,9 @@ function resizeGame(gameSize) {
 // --- STEP 5: FLY CONTROL ---
 function fly() {
   if (gameOver) return;
-  this.pocoyo.setVelocityY(FLY_VELOCITY);
+  if (this.pocoyoContainer && this.pocoyoContainer.body) {
+    this.pocoyoContainer.body.setVelocityY(FLY_VELOCITY);
+  }
   this.jumpSound.play();
 }
 
