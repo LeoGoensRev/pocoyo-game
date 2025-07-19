@@ -29,7 +29,7 @@ class MainScene extends Phaser.Scene {
     if (sw < 900) return 0.25; // sm
     if (sw < 1200) return 0.30; // md
     if (sw < 1536) return 0.40; // lg
-    return 1.55; // xl
+    return 0.55; // xl
   }
 
   preload() {
