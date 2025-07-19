@@ -103,16 +103,8 @@ function create() {
   const introImgDims = setIntroImgSize();
   // Title and button on top of intro image
   const introBtnY = this.scale.height / 2 + (introImgDims ? introImgDims.dh : this.scale.height) / 3;
-  this.introBtn = this.add.text(this.scale.width / 2, introBtnY, 'TAP OR CLICK TO START!', {
+  this.introBtn = this.add.text(this.scale.width / 2, introBtnY, '', {
     fontFamily: 'POCOYO TV, Arial, sans-serif',
-    fontWeight: 'bold',
-    fontSize: Math.max(10, Math.floor(this.scale.width / 35)) + 'px',
-    color: '#fff',
-    backgroundColor: '#bd3938',
-    padding: { left: 32, right: 32, top: 16, bottom: 16 },
-    stroke: '#bd3938',
-    strokeThickness: 1,
-    align: 'center'
   }).setOrigin(0.5).setInteractive({ useHandCursor: true });
 
   // Start game on any tap/click
