@@ -38,6 +38,7 @@ class MainScene extends Phaser.Scene {
     this.load.image('pocoyo', 'assets/pocoyo.png');
     this.load.image('star', 'assets/star.png');
     this.load.image('propeller', 'assets/propeller.png');
+    this.load.image('life', 'assets/life.jpg');
     this.load.audio('jump', 'assets/jump.mp3');
     this.load.audio('bgmusic', 'assets/bg-music.mp3');
     this.load.audio('catch', 'assets/catch.mp3');
@@ -122,7 +123,7 @@ class MainScene extends Phaser.Scene {
 
     this.jumpSound = this.sound.add('jump');
     this.catchSound = this.sound.add('catch');
-    bgMusic = this.sound.add('bgmusic', { loop: true, volume: 0.2 });
+    bgMusic = this.sound.add('bgmusic', { loop: true, volume: 0.5 });
     bgMusic.play();
 
     this.physics.add.overlap(this.pocoyoContainer, this.stars, this.collectStar, null, this);
@@ -167,22 +168,32 @@ class MainScene extends Phaser.Scene {
       align: 'left'
     }).setOrigin(0, 0);
 
-    const livesBgWidth = Math.max(160, Math.floor(this.scale.width * 0.13));
+    const livesBgWidth = Math.max(190, Math.floor(this.scale.width * 0.13));
     const livesBgHeight = scoreFontSize + 24;
     this.livesBg = this.add.graphics();
     this.livesBg.fillStyle(0xffffff, 0.7);
     this.livesBg.fillRoundedRect(this.scale.width - livesBgWidth, yUI, livesBgWidth, livesBgHeight, 10);
 
-    this.livesHearts = this.add.text(this.scale.width - 32, yUI + livesBgHeight / 2, this.makeHearts(MAX_LIVES), {
-      fontFamily: 'POCOYO TV, Arial, sans-serif',
-      fontSize: scoreFontSize + 10 + 'px',
-      color: '#e63946',
-      align: 'right'
-    }).setOrigin(1, 0.5);
+    // Add life images instead of text hearts
+    this.livesImages = [];
+    const lifeSize = scoreFontSize + 10;
+    for (let i = 0; i < MAX_LIVES; i++) {
+      const img = this.add.image(
+        this.scale.width - livesBgWidth + 8 + i * (lifeSize + 8),
+        yUI + livesBgHeight / 2,
+        'life'
+      ).setDisplaySize(lifeSize, lifeSize).setOrigin(0, 0.5);
+      this.livesImages.push(img);
+    }
   }
 
-  makeHearts(lives) {
-    return '♥'.repeat(lives) + ''.repeat(MAX_LIVES - lives);
+  // Remove makeHearts, not needed anymore
+
+  updateLivesDisplay() {
+    if (!this.livesImages) return;
+    for (let i = 0; i < this.livesImages.length; i++) {
+      this.livesImages[i].setVisible(i < (MAX_LIVES - missedStars));
+    }
   }
 
   update() {
@@ -200,14 +211,12 @@ class MainScene extends Phaser.Scene {
       if (star.x < -32) {
         star.destroy();
         missedStars++;
-        this.livesHearts?.setText(this.makeHearts(Math.max(0, MAX_LIVES - missedStars)));
+        this.updateLivesDisplay();
         if (missedStars >= MAX_LIVES && !gameOver) return this.endGame();
         this.spawnStar();
       }
     });
     if (this.pocoyoContainer?.body && this.pocoyo) {
-      //const pocoyoHeight = this.pocoyo.displayHeight;
-      //const minY = this.topMargin + pocoyoHeight / 2;
       const pocoyoHeight = this.pocoyo.displayHeight;
       const minY = this.topMargin + pocoyoHeight / 2;
       const maxY = this.scale.height - this.bottomMargin - (pocoyoHeight / 2);
@@ -218,16 +227,6 @@ class MainScene extends Phaser.Scene {
         this.pocoyoContainer.y = maxY - 1; // Nudge up slightly to allow smoother jump
         this.pocoyoContainer.body.setVelocityY(-30); // Help Pocoyo lift off again
       }
-      /*
-      if (this.pocoyoContainer.y < minY) {
-        this.pocoyoContainer.y = minY;
-        this.pocoyoContainer.body.setVelocityY(0);
-      }
-      //const maxY = this.scale.height - this.bottomMargin - (this.pocoyo.displayHeight / 2);
-      if (this.pocoyoContainer.y > maxY) {
-        this.pocoyoContainer.y = maxY;
-        this.pocoyoContainer.body.setVelocityY(0);
-      }*/
     }
   }
 
