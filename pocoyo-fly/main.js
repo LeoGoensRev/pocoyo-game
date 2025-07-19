@@ -153,17 +153,32 @@ function startGame() {
   const pocoyoScale = 0.3;
   // Offset Pocoyo left in the container so the propeller is at the nose and Pocoyo is visible
   const pocoyoOffsetX = 0;
-  const pocoyoOffsetY = -63; // positive moves Pocoyo down in the container
+  const pocoyoOffsetY = -63;
   this.pocoyoContainer = this.add.container(160, this.scale.height / 2);
+  // Add colored background rectangle as first child
+  const bgWidth = 420 * pocoyoScale;
+  const bgHeight = 180 * pocoyoScale;
+  const bgColor = 0x000000; // black , change as desired
+  const bgAlpha = 0.5; // semi-transparent
+  const bgRect = this.add.graphics();
+  bgRect.fillStyle(bgColor, bgAlpha);
+  bgRect.fillRoundedRect(-40, -90, bgWidth, bgHeight, 32);
+  // Add all children to container (background first)
   this.pocoyo = this.add.sprite(pocoyoOffsetX, pocoyoOffsetY, 'pocoyo').setScale(pocoyoScale);
   const propellerOffsetX = 370 * pocoyoScale;
   const propellerOffsetY = -25;
   this.propeller = this.add.sprite(propellerOffsetX, propellerOffsetY, 'propeller').setScale(0.20);
   this.propeller.setOrigin(0.5, 0.5);
-  this.pocoyoContainer.add([this.pocoyo, this.propeller]);
+  this.pocoyoContainer.add([bgRect, this.pocoyo, this.propeller]);
   // Enable physics on the container
   this.physics.world.enable(this.pocoyoContainer);
   this.pocoyoContainer.body.setCollideWorldBounds(true);
+  // Set body size to cover the whole plane (including propeller)
+  const bodyWidth = 420 * pocoyoScale; // match bgWidth
+  const bodyHeight = 120 * pocoyoScale; // slightly less than bgHeight for better fit
+  this.pocoyoContainer.body.setSize(bodyWidth, bodyHeight);
+  // Offset the body so it matches the plane's visual bounds
+  this.pocoyoContainer.body.setOffset(0, 25); // match bgRect x/y, but less y for better fit
 
   // 3. Input: spacebar (desktop), or any tap/touch (mobile/tablet)
   this.input.keyboard.on('keydown-SPACE', fly, this);
@@ -204,8 +219,8 @@ function startGame() {
   bgMusic = this.sound.add('bgmusic', { loop: true, volume: 0.2 });
   bgMusic.play();
 
-  // 7. Collisions: Pocoyo <-> Stars
-  this.physics.add.overlap(this.pocoyo, this.stars, collectStar, null, this);
+  // 7. Collisions: PocoyoContainer <-> Stars
+  this.physics.add.overlap(this.pocoyoContainer, this.stars, collectStar, null, this);
 
   // --- Handle resizing ---
   this.scale.on('resize', resizeGame, this);
@@ -249,10 +264,12 @@ function update() {
     }, this);
   }
 
-  // 3. Game over if Pocoyo falls off screen (just reset position, not game over)
-  if (this.pocoyoContainer && (this.pocoyoContainer.y > this.scale.height || this.pocoyoContainer.y < 0)) {
-    this.pocoyoContainer.setPosition(100, this.scale.height / 2);
-    this.pocoyoContainer.body.setVelocity(0, 0);
+  // 3. Clamp at top, game over at bottom
+  if (this.pocoyoContainer && this.pocoyoContainer.body) {
+    if (this.pocoyoContainer.y < 0) {
+      this.pocoyoContainer.y = 0;
+      this.pocoyoContainer.body.setVelocityY(0);
+    }
   }
 }
 
@@ -311,7 +328,7 @@ function spawnStar() {
 }
 
 // --- STEP 6: SCORING SYSTEM ---
-function collectStar(pocoyo, star) {
+function collectStar(containerOrPocoyo, star) {
   star.destroy();
   score += 1;
   scoreText.setText('STARS: ' + score);
