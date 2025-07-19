@@ -317,9 +317,6 @@ function endGame() {
     strokeThickness: 8,
     align: 'center'
   }).setOrigin(0.5);
-  if (this.livesHearts) {
-    this.livesHearts.setText('♡♡♡');
-  }
   // Block input until restart, then re-enable
   this.input.once('pointerdown', () => {
     gameOver = false;
