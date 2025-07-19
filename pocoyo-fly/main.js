@@ -230,7 +230,7 @@ function update() {
   if (gameOver) return;
   // Animate propeller if exists
   if (this.propeller) {
-    this.propeller.rotation += 0.35; // spin speed
+    this.propeller.rotation += 0.10; // spin speed
   }
 
   // 1. Scroll background for endless effect
