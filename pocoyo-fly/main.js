@@ -198,20 +198,26 @@ class MainScene extends Phaser.Scene {
     if (this.livesImages && this.livesBg) {
       const scoreFontSize = Math.max(16, Math.floor(sw / FONT_RATIO));
       const yUI = this.topMargin;
-      const livesBgWidth = Math.max(350, Math.floor(sw * 0.13));
+      // Responsive width: 90vw max, 120px min, 350px max
+      let livesBgWidth = Math.floor(sw * 0.6); // 60vw for mobile
+      livesBgWidth = Math.max(120, Math.min(livesBgWidth, 350));
+      // If very wide, use 13vw as before
+      if (sw > 700) livesBgWidth = Math.max(190, Math.floor(sw * 0.13));
       const livesBgHeight = scoreFontSize + 24;
       this.livesBg.clear();
       this.livesBg.fillStyle(0xffffff, 0.7);
       this.livesBg.fillRoundedRect(sw - livesBgWidth, yUI, livesBgWidth, livesBgHeight, 10);
       // Update life images
       const lifeSize = scoreFontSize + 10;
+      const totalLifeWidth = this.livesImages.length * (lifeSize + 8) - 8;
+      let startX = sw - livesBgWidth + (livesBgWidth - totalLifeWidth) / 2;
       for (let i = 0; i < this.livesImages.length; i++) {
         this.livesImages[i].setDisplaySize(lifeSize, lifeSize);
-        this.livesImages[i].setPosition(sw - livesBgWidth + 8 + i * (lifeSize + 8), yUI + livesBgHeight / 2);
+        this.livesImages[i].setPosition(startX + i * (lifeSize + 8), yUI + livesBgHeight / 2);
       }
     }
     // Responsive alien(s)
-    if (this.alienGroup) {
+    if (this.alienGroup && this.alienGroup.children && typeof this.alienGroup.children.iterate === 'function') {
       const alienScale = this.getCharacterScale();
       this.alienGroup.children.iterate((alien) => {
         if (alien) alien.setScale(alienScale);
@@ -323,7 +329,7 @@ class MainScene extends Phaser.Scene {
       }
     });
     // Move alien(s)
-    if (this.alienGroup) {
+    if (this.alienGroup && this.alienGroup.children && typeof this.alienGroup.children.iterate === 'function') {
       this.alienGroup.children.iterate((alien) => {
         if (!alien) return;
         alien.x -= (STAR_SPEED + 100) * (1/20); // Alien moves a bit faster than stars
@@ -476,6 +482,11 @@ const config = {
   scale: {
     mode: Phaser.Scale.RESIZE,
     autoCenter: Phaser.Scale.CENTER_BOTH
+  },
+  render: {
+    canvas: {
+      willReadFrequently: true
+    }
   }
 };
 
